@@ -45,7 +45,7 @@ OpenCode 版本检查和 mini-swe-agent 的帮助命令通过，均未调用模�
 3. 当前 T3 有 provider instance registry。`worker.provider` 使用实例 ID，而不是共享的驱动名称，以保留不同账号和配置的隔离。
 4. 开发模式的 Node 文件监听会被类型检查触发连续重启。真实模型验收采用不带监听的源码服务；前端仍通过 Vite 单一来源代理访问服务器。
 5. 浏览器初次访问需要配对；临时配对凭据和验收访问令牌只保存在隔离开发状态中，不进入报告或 Git。
-6. 全量 `serverSettings.test.ts` 在本机沙箱中有三项既有文件监听测试超时；本次新增的 Nebius secret 测试及现有 secret 生命周期测试通过。未修改与此功能无关的监听实现。
+6. 全量 `serverSettings.test.ts` 在本机沙箱中有三项符号链接文件监听测试超时；在沙箱外单独重跑这三项后全部通过。新增 Nebius secret 测试及现有 secret 生命周期测试也通过，未修改监听实现。
 
 ## 继续条件
 
@@ -53,6 +53,6 @@ M0 的 worker 可行性成立，M1 已为后续监测层提供明确的 worker.p
 
 ## 代码验证
 
-相关定向测试共覆盖 237 个测试用例，均通过，包括共享设置默认值、OpenCode 适配器回归、worker 持久化与切换、Nebius 禁用/缺少密钥时拒绝推理，以及 secret 隔离和脱敏。contracts、provider-opencode、server、web、mobile 五个包的类型检查通过。改动文件的格式检查、lint 和 Git 空白检查通过；lint 剩余提示来自上游未使用的声明等已有代码。
+相关定向测试共覆盖 240 个测试用例，均通过，包括共享设置默认值、OpenCode 适配器回归、worker 持久化与切换、Nebius 禁用/缺少密钥时拒绝推理、secret 隔离和脱敏，以及沙箱外的文件监听复核。contracts、provider-opencode、server、web、mobile 五个包的类型检查通过。改动文件的格式检查、lint 和 Git 空白检查通过；lint 剩余提示来自上游未使用的声明等已有代码。
 
 凭据检查未发现本次改动包含真实 key 或临时验收令牌。上游的脱敏单元测试及 vendored 测试包含模拟 key 字符串，不将这些 fixture 误算为真实凭据，也未为消除匹配而改动它们。

@@ -21,7 +21,6 @@ import {
   type OrchestrationV2PlanStep,
   type OrchestrationV2ProviderCapabilities,
   type OrchestrationV2ProviderFailure,
-  type OrchestrationV2ProviderRef,
   type OrchestrationV2ProviderSession,
   type OrchestrationV2ProviderThread,
   type OrchestrationV2ProviderTurn,
@@ -430,6 +429,7 @@ interface PendingOpenCodeRequest {
 }
 
 export interface OpenCodeAdapterV2Options {
+  readonly driverKind?: ProviderDriverKind;
   readonly instanceId: ProviderInstanceId;
   readonly settings: OpenCodeSettings;
   readonly environment: NodeJS.ProcessEnv;
@@ -825,6 +825,7 @@ function taskSessionId(part: ToolPart): string | null {
 }
 
 function makeProviderThread(input: {
+  readonly driverKind?: ProviderDriverKind;
   readonly idAllocator: IdAllocator.IdAllocatorV2["Service"];
   readonly providerInstanceId: ProviderInstanceId;
   readonly providerSessionId: OrchestrationV2ProviderThread["providerSessionId"];
@@ -834,19 +835,20 @@ function makeProviderThread(input: {
   readonly forkedFrom?: OrchestrationV2ProviderThread["forkedFrom"];
   readonly now: DateTime.Utc;
 }): OrchestrationV2ProviderThread {
+  const driver = input.driverKind ?? OPENCODE_PROVIDER;
   const createdAt = dateTimeFromEpoch(input.nativeSession.time.created, input.now);
   return {
     id: input.idAllocator.derive.providerThread({
-      driver: OPENCODE_PROVIDER,
+      driver,
       nativeThreadId: input.nativeSession.id,
     }),
-    driver: OPENCODE_PROVIDER,
+    driver,
     providerInstanceId: input.providerInstanceId,
     providerSessionId: input.providerSessionId,
     appThreadId: input.appThreadId,
     ownerNodeId: input.ownerNodeId ?? null,
     nativeThreadRef: {
-      driver: OPENCODE_PROVIDER,
+      driver,
       nativeId: input.nativeSession.id,
       strength: "strong",
     },
@@ -859,14 +861,6 @@ function makeProviderThread(input: {
     createdAt,
     updatedAt: dateTimeFromEpoch(input.nativeSession.time.updated, input.now),
   };
-}
-
-function providerRef(nativeId: string, strength: "strong" | "weak" = "strong") {
-  return {
-    driver: OPENCODE_PROVIDER,
-    nativeId,
-    strength,
-  } satisfies OrchestrationV2ProviderRef;
 }
 
 function openCodeErrorMessage(event: Extract<OpenCodeEvent, { type: "session.error" }>): string {
@@ -939,6 +933,12 @@ function unwrapData<A>(operation: string, result: { readonly data?: A }): NonNul
 export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function* (
   options: OpenCodeAdapterV2Options,
 ) {
+  const driver = options.driverKind ?? OPENCODE_PROVIDER;
+  const providerRef = (nativeId: string, strength: "strong" | "weak" = "strong") => ({
+    driver,
+    nativeId,
+    strength,
+  });
   const runtime = yield* OpenCodeRuntime.OpenCodeRuntime;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
@@ -947,7 +947,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
   return ProviderAdapter.ProviderAdapterV2.of({
     instanceId: options.instanceId,
-    driver: OPENCODE_PROVIDER,
+    driver,
     getCapabilities: () => Effect.succeed(OpenCodeProviderCapabilitiesV2),
     planSelectionTransition: () => Effect.succeed(turnScopedSelectionTransition()),
     openSession: Effect.fn("OpenCodeAdapterV2.openSession")(
@@ -988,7 +988,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         const now = yield* DateTime.now;
         let sessionEntity: OrchestrationV2ProviderSession = {
           id: input.providerSessionId,
-          driver: OPENCODE_PROVIDER,
+          driver,
           providerInstanceId: options.instanceId,
           status: "ready",
           cwd,
@@ -1116,7 +1116,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             sessionEntity = { ...sessionEntity, status, lastError, updatedAt };
             yield* emitProviderEvent({
               type: "provider_session.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               providerSession: sessionEntity,
             });
           });
@@ -1130,7 +1130,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             state.providerThread = { ...state.providerThread, ...patch, updatedAt };
             yield* emitProviderEvent({
               type: "provider_thread.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               providerThread: state.providerThread,
             });
           });
@@ -1188,7 +1188,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           state.providerTurns.set(String(providerTurn.id), providerTurn);
           return emitProviderEvent({
             type: "provider_turn.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             threadId: turn.threadId,
             providerTurn,
           });
@@ -1208,17 +1208,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const completedAt = isCompleted ? dateTimeFromEpoch(part.time?.end, emittedAt) : null;
           const nativeItemRef = providerRef(part.id);
           const nodeId = idAllocator.derive.nodeFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           const turnItemId = idAllocator.derive.turnItemFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           const ordinal = itemOrdinal(turn, part.id);
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: nodeId,
               threadId: turn.threadId,
@@ -1239,7 +1239,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           if (part.type === "text") {
             const messageId = idAllocator.derive.messageFromProviderItem({
-              driver: OPENCODE_PROVIDER,
+              driver,
               nativeItemId: part.id,
             });
             const message: OrchestrationV2ConversationMessage = {
@@ -1258,12 +1258,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             };
             yield* emitProviderEvent({
               type: "message.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               message,
             });
             yield* emitProviderEvent({
               type: "turn_item.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               turnItem: {
                 id: turnItemId,
                 threadId: turn.threadId,
@@ -1289,7 +1289,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           }
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: {
               id: turnItemId,
               threadId: turn.threadId,
@@ -1320,11 +1320,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const now = yield* DateTime.now;
           const nativeItemRef = providerRef(part.id);
           const nodeId = idAllocator.derive.nodeFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           const turnItemId = idAllocator.derive.turnItemFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           turn.usage.hasSubagents = true;
@@ -1354,11 +1354,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           if (childSessionId !== null && context.childSessionId === null) {
             context.childSessionId = childSessionId;
             context.childThreadId = idAllocator.derive.threadFromProviderThread({
-              driver: OPENCODE_PROVIDER,
+              driver,
               nativeThreadId: childSessionId,
             });
             context.childProviderThreadId = idAllocator.derive.providerThread({
-              driver: OPENCODE_PROVIDER,
+              driver,
               nativeThreadId: childSessionId,
             });
             subagentsByChildSessionId.set(childSessionId, context);
@@ -1386,7 +1386,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             });
             const childProviderThread: OrchestrationV2ProviderThread = {
               id: context.childProviderThreadId,
-              driver: OPENCODE_PROVIDER,
+              driver,
               providerInstanceId: options.instanceId,
               providerSessionId: inputProviderSessionId,
               appThreadId: context.childThreadId,
@@ -1435,12 +1435,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             });
             yield* emitProviderEvent({
               type: "app_thread.created",
-              driver: OPENCODE_PROVIDER,
+              driver,
               appThread: childThread,
             });
             yield* emitProviderEvent({
               type: "provider_thread.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               providerThread: childProviderThread,
             });
           }
@@ -1463,7 +1463,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             parentNodeId: turn.rootNodeId,
             origin: "provider_native",
             createdBy: "agent",
-            driver: OPENCODE_PROVIDER,
+            driver,
             providerInstanceId: options.instanceId,
             providerThreadId: context.childProviderThreadId,
             childThreadId: context.childThreadId,
@@ -1479,7 +1479,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           };
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: nodeId,
               threadId: turn.threadId,
@@ -1500,12 +1500,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "subagent.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             subagent,
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: {
               id: turnItemId,
               threadId: turn.threadId,
@@ -1524,7 +1524,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               type: "subagent",
               subagentId: nodeId,
               origin: "provider_native",
-              driver: OPENCODE_PROVIDER,
+              driver,
               providerInstanceId: options.instanceId,
               childThreadId: context.childThreadId,
               prompt,
@@ -1552,11 +1552,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const completedAt = toolCompletedAt(part, now);
           const nativeItemRef = providerRef(part.id);
           const nodeId = idAllocator.derive.nodeFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           const turnItemId = idAllocator.derive.turnItemFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.id,
           });
           const base = {
@@ -1635,7 +1635,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               });
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: nodeId,
               threadId: turn.threadId,
@@ -1656,7 +1656,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem,
           });
         });
@@ -1671,17 +1671,17 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             turn.planId = yield* idAllocator.allocate.plan({
               threadId: turn.threadId,
               ...(turn.runId === null ? {} : { runId: turn.runId }),
-              driver: OPENCODE_PROVIDER,
+              driver,
             });
           }
           const planId = turn.planId;
           const nativeItemId = `${state.nativeSessionId}:todo:${turn.providerTurnId}`;
           const nodeId = idAllocator.derive.nodeFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId,
           });
           const turnItemId = idAllocator.derive.turnItemFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId,
           });
           const steps: Array<OrchestrationV2PlanStep> = todos.map((todo, index) => ({
@@ -1697,7 +1697,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const completed = steps.length > 0 && steps.every((step) => step.status === "completed");
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: nodeId,
               threadId: turn.threadId,
@@ -1718,7 +1718,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "plan.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             plan: {
               id: planId,
               threadId: turn.threadId,
@@ -1731,7 +1731,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: {
               id: turnItemId,
               threadId: turn.threadId,
@@ -1823,7 +1823,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const { state, turn, subagent } = owner;
           const now = yield* DateTime.now;
           const requestId = yield* idAllocator.allocate.runtimeRequest({
-            driver: OPENCODE_PROVIDER,
+            driver,
             providerTurnId: turn.providerTurnId,
             nativeRequestId,
           });
@@ -1876,7 +1876,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           state.runtimeRequests.set(String(requestId), runtimeRequest);
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: nodeId,
               threadId: turn.threadId,
@@ -1897,13 +1897,13 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "runtime_request.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             threadId: turn.threadId,
             runtimeRequest,
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: runtimeRequestTurnItem(pending, "waiting", null, now),
           });
           yield* updateProviderSession("waiting", null);
@@ -1926,14 +1926,14 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             pending.state.runtimeRequests.set(String(pending.requestId), resolved);
             yield* emitProviderEvent({
               type: "runtime_request.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               threadId: pending.turn.threadId,
               runtimeRequest: resolved,
             });
           }
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: pending.nodeId,
               threadId: pending.turn.threadId,
@@ -1954,7 +1954,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: runtimeRequestTurnItem(
               pending,
               status === "resolved" ? "completed" : "cancelled",
@@ -2081,7 +2081,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           if (!turn.isRoot) {
             yield* emitProviderEvent({
               type: "node.updated",
-              driver: OPENCODE_PROVIDER,
+              driver,
               node: {
                 id: turn.rootNodeId,
                 threadId: turn.threadId,
@@ -2113,7 +2113,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
             status === "failed"
               ? {
                   type: "turn.terminal",
-                  driver: OPENCODE_PROVIDER,
+                  driver,
                   providerThreadId: turn.providerThreadId,
                   providerTurnId: turn.providerTurnId,
                   runOrdinal: turn.runOrdinal,
@@ -2129,7 +2129,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                 }
               : {
                   type: "turn.terminal",
-                  driver: OPENCODE_PROVIDER,
+                  driver,
                   providerThreadId: turn.providerThreadId,
                   providerTurnId: turn.providerTurnId,
                   runOrdinal: turn.runOrdinal,
@@ -2225,11 +2225,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const now = yield* DateTime.now;
           const startedAt = dateTimeFromEpoch(message.time.created, now);
           const rootNodeId = idAllocator.derive.nodeFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: `${state.nativeSessionId}:root:${message.id}`,
           });
           const providerTurnId = idAllocator.derive.providerTurn({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeTurnId: message.id,
           });
           const providerTurn: OrchestrationV2ProviderTurn = {
@@ -2282,7 +2282,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           state.providerTurns.set(String(providerTurnId), providerTurn);
           yield* emitProviderEvent({
             type: "node.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             node: {
               id: rootNodeId,
               threadId: turn.threadId,
@@ -2312,11 +2312,11 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
         ) {
           const now = yield* DateTime.now;
           const messageId = idAllocator.derive.messageFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.messageID,
           });
           const turnItemId = idAllocator.derive.turnItemFromProviderItem({
-            driver: OPENCODE_PROVIDER,
+            driver,
             nativeItemId: part.messageID,
           });
           const projected: OrchestrationV2ConversationMessage = {
@@ -2335,12 +2335,12 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           };
           yield* emitProviderEvent({
             type: "message.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             message: projected,
           });
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: {
               createdBy: "agent",
               creationSource: "provider",
@@ -2376,10 +2376,10 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           const now = yield* DateTime.now;
           yield* emitProviderEvent({
             type: "turn_item.updated",
-            driver: OPENCODE_PROVIDER,
+            driver,
             turnItem: {
               id: idAllocator.derive.turnItemFromProviderItem({
-                driver: OPENCODE_PROVIDER,
+                driver,
                 nativeItemId,
               }),
               threadId: turn.threadId,
@@ -2391,7 +2391,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               parentItemId: null,
               ordinal: itemOrdinal(turn, nativeItemId),
               type: "compaction",
-              driver: OPENCODE_PROVIDER,
+              driver,
               status: "completed",
               title: "Context compacted",
               startedAt: turn.startedAt,
@@ -2894,7 +2894,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
                   createdBy: info.role === "user" ? "user" : "agent",
                   creationSource: "provider",
                   id: idAllocator.derive.messageFromProviderItem({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     nativeItemId: info.id,
                   }),
                   threadId: providerThread.appThreadId ?? input.threadId,
@@ -3023,7 +3023,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
 
         const runtimeSession: ProviderAdapter.ProviderAdapterV2SessionRuntime = {
           instanceId: options.instanceId,
-          driver: OPENCODE_PROVIDER,
+          driver,
           providerSessionId: input.providerSessionId,
           providerSession: sessionEntity,
           events: Stream.fromEffectRepeat(Queue.take(events)),
@@ -3050,6 +3050,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const nativeSession = unwrapData("session.create", response);
               const createdAt = yield* DateTime.now;
               const created = makeProviderThread({
+                driverKind: driver,
                 idAllocator,
                 providerInstanceId: options.instanceId,
                 providerSessionId: input.providerSessionId,
@@ -3078,7 +3079,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterEnsureThreadError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     threadId: threadInput.threadId,
                     cause,
                   }),
@@ -3104,7 +3105,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterResumeThreadError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerSessionId: input.providerSessionId,
                     providerThreadId: threadInput.providerThread.id,
                     cause,
@@ -3148,7 +3149,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const startedAt = yield* DateTime.now;
               const syntheticNativeTurnId = `${sessionId}:attempt:${turnInput.attemptId}`;
               const providerTurnId = idAllocator.derive.providerTurn({
-                driver: OPENCODE_PROVIDER,
+                driver,
                 nativeTurnId: syntheticNativeTurnId,
               });
               const providerTurn: OrchestrationV2ProviderTurn = {
@@ -3314,7 +3315,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterTurnStartError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     threadId: turnInput.threadId,
                     providerThreadId: turnInput.providerThread.id,
                     runId: turnInput.runId,
@@ -3404,7 +3405,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterSteerRunError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerThreadId: steerInput.providerThread.id,
                     providerTurnId: steerInput.providerTurnId,
                     cause,
@@ -3474,7 +3475,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterInterruptError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerThreadId: interruptInput.providerThread.id,
                     providerTurnId: interruptInput.providerTurnId,
                     cause,
@@ -3535,7 +3536,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterRuntimeRequestResponseError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     requestId: requestInput.requestId,
                     cause,
                   }),
@@ -3546,7 +3547,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterReadThreadSnapshotError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerThreadId: snapshotInput.providerThread.id,
                     cause,
                   }),
@@ -3629,7 +3630,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterRollbackThreadError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerThreadId: rollbackInput.providerThread.id,
                     checkpointId: rollbackInput.target.checkpointId,
                     cause,
@@ -3671,6 +3672,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               const nativeSession = unwrapData("session.fork", response);
               const forkedAt = yield* DateTime.now;
               const providerThread = makeProviderThread({
+                driverKind: driver,
                 idAllocator,
                 providerInstanceId: options.instanceId,
                 providerSessionId: input.providerSessionId,
@@ -3693,7 +3695,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
               Effect.mapError(
                 (cause) =>
                   new ProviderAdapter.ProviderAdapterForkThreadError({
-                    driver: OPENCODE_PROVIDER,
+                    driver,
                     providerThreadId: forkInput.sourceProviderThread.id,
                     cause,
                   }),
@@ -3708,7 +3710,7 @@ export const makeOpenCodeAdapterV2 = Effect.fn("makeOpenCodeAdapterV2")(function
           Effect.mapError(
             (cause) =>
               new ProviderAdapter.ProviderAdapterOpenSessionError({
-                driver: OPENCODE_PROVIDER,
+                driver,
                 providerSessionId: input.providerSessionId,
                 cause,
               }),
@@ -3725,40 +3727,44 @@ export type OpenCodeAdapterV2DriverEnv =
   | ProviderEventLoggers.ProviderEventLoggers
   | ProviderHost.ProviderHost;
 
-export const OpenCodeAdapterV2Driver: ProviderAdapterDriver<
-  OpenCodeSettings,
-  OpenCodeAdapterV2DriverEnv
-> = {
-  driverKind: OPENCODE_PROVIDER,
-  configSchema: OpenCodeSettings,
-  defaultConfig: (): OpenCodeSettings => DEFAULT_OPENCODE_SETTINGS,
-  create: Effect.fn("OpenCodeAdapterV2Driver.create")(
-    function* (input: ProviderAdapterDriverCreateInput<OpenCodeSettings>) {
-      const hostEnvironment = yield* HostProcess.Environment;
-      const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
-      return yield* makeOpenCodeAdapterV2({
-        instanceId: input.instanceId,
-        settings: { ...input.config, enabled: input.enabled },
-        environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
-        ...(providerEventLoggers.native === undefined
-          ? {}
-          : { nativeEventLogger: providerEventLoggers.native }),
-      });
-    },
-    (effect, input) =>
-      effect.pipe(
-        Effect.mapError(
-          (cause) =>
-            new ProviderAdapterDriverCreateError({
-              driver: OPENCODE_PROVIDER,
-              instanceId: input.instanceId,
-              detail: "Failed to create OpenCode v2 adapter.",
-              cause,
-            }),
+export function makeOpenCodeAdapterDriver(
+  driver = OPENCODE_PROVIDER,
+): ProviderAdapterDriver<OpenCodeSettings, OpenCodeAdapterV2DriverEnv> {
+  return {
+    driverKind: driver,
+    configSchema: OpenCodeSettings,
+    defaultConfig: (): OpenCodeSettings => DEFAULT_OPENCODE_SETTINGS,
+    create: Effect.fn("OpenCodeAdapterV2Driver.create")(
+      function* (input: ProviderAdapterDriverCreateInput<OpenCodeSettings>) {
+        const hostEnvironment = yield* HostProcess.Environment;
+        const providerEventLoggers = yield* ProviderEventLoggers.ProviderEventLoggers;
+        return yield* makeOpenCodeAdapterV2({
+          driverKind: driver,
+          instanceId: input.instanceId,
+          settings: { ...input.config, enabled: input.enabled },
+          environment: yield* mergeProviderInstanceEnvironment(input.environment, hostEnvironment),
+          ...(providerEventLoggers.native === undefined
+            ? {}
+            : { nativeEventLogger: providerEventLoggers.native }),
+        });
+      },
+      (effect, input) =>
+        effect.pipe(
+          Effect.mapError(
+            (cause) =>
+              new ProviderAdapterDriverCreateError({
+                driver,
+                instanceId: input.instanceId,
+                detail: "Failed to create OpenCode v2 adapter.",
+                cause,
+              }),
+          ),
         ),
-      ),
-  ),
-};
+    ),
+  };
+}
+
+export const OpenCodeAdapterV2Driver = makeOpenCodeAdapterDriver();
 
 const layer: Layer.Layer<ProviderAdapter.ProviderAdapterV2, never, OpenCodeAdapterV2DriverEnv> =
   Layer.effect(

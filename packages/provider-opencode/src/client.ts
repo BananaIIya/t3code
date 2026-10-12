@@ -22,3 +22,5 @@ export const openCodeClient = defineProviderClient({
     ],
   },
 });
+
+export { nebiusClient } from "./nebiusClient.ts";

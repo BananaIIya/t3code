@@ -207,7 +207,10 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
       <PopoverTrigger
         render={
           <ComposerControl
-            aria-label={props.triggerAriaLabel ?? allModelNames}
+            aria-label={
+              props.triggerAriaLabel ??
+              `Worker: ${props.triggerLabel ?? allModelNames ?? triggerLabel}`
+            }
             size={size}
             data-chat-provider-model-picker="true"
             className={cn(
@@ -272,6 +275,7 @@ export const ProviderModelPicker = memo(function ProviderModelPicker(props: {
                 />
               }
             >
+              {props.isComposerOwned ? "Worker · " : ""}
               {props.triggerLabel ?? multipleLabel ?? triggerTitle}
             </TooltipTrigger>
             <TooltipPopup side="top">{triggerTooltipContent}</TooltipPopup>

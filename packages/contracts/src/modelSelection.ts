@@ -61,3 +61,20 @@ export const ModelSelection = ModelSelectionSource.pipe(
   ),
 );
 export type ModelSelection = typeof ModelSelection.Type;
+
+/** Worker provider names the configured provider instance, so each account remains isolated. */
+export const WorkerConfiguration = Schema.Struct({
+  provider: ProviderInstanceId,
+  model: TrimmedNonEmptyString,
+});
+export type WorkerConfiguration = typeof WorkerConfiguration.Type;
+
+export const workerForModelSelection = (selection: ModelSelection): WorkerConfiguration => ({
+  provider: selection.instanceId,
+  model: selection.model,
+});
+
+export const modelSelectionForWorker = (worker: WorkerConfiguration): ModelSelection => ({
+  instanceId: worker.provider,
+  model: worker.model,
+});

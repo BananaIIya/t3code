@@ -1441,6 +1441,38 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(layerServerSettings())),
   );
 
+  it.effect("stores the Nebius API key separately and redacts client settings", () =>
+    Effect.gen(function* () {
+      const service = yield* ServerSettingsModule.ServerSettingsService;
+      const config = yield* ServerConfig.ServerConfig;
+      const fs = yield* FileSystem.FileSystem;
+      const instanceId = ProviderInstanceId.make("nebius");
+      const saved = yield* service.updateSettings({
+        providerInstances: {
+          [instanceId]: {
+            driver: ProviderDriverKind.make("nebius"),
+            enabled: false,
+            config: { apiKey: "nebius-test-credential" },
+          },
+        },
+      });
+      assert.propertyVal(
+        saved.providerInstances[instanceId]?.config,
+        "apiKey",
+        "nebius-test-credential",
+      );
+      const client = ServerSettingsModule.redactServerSettingsForClient(saved);
+      assert.propertyVal(client.providerInstances[instanceId]?.config, "apiKey", "••••••");
+      assert.notInclude(yield* fs.readFileString(config.settingsPath), "nebius-test-credential");
+      const echoed = yield* service.updateSettings({ providerInstances: client.providerInstances });
+      assert.propertyVal(
+        echoed.providerInstances[instanceId]?.config,
+        "apiKey",
+        "nebius-test-credential",
+      );
+    }).pipe(Effect.provide(layerServerSettingsWithSecrets())),
+  );
+
   it.effect(
     "uses the same secret lifecycle for provider config, environment, host tokens, and quota keys",
     () =>

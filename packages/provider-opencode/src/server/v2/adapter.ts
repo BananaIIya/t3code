@@ -623,12 +623,6 @@ const agentPaths = (rules: ReadonlyArray<Rule>) =>
       (entry.action === "edit" || entry.action === "external_directory"),
   );
 
-const ref = (nativeId: string, strength: "strong" | "weak" = "strong") => ({
-  driver: OPENCODE_PROVIDER,
-  nativeId,
-  strength,
-});
-
 const sessionIdOf = (providerThread: OrchestrationV2ProviderThread) => {
   const nativeId = providerThread.nativeThreadRef?.nativeId;
   return nativeId === undefined || nativeId === null
@@ -845,14 +839,21 @@ const turnTokenUsage = (turn: ActiveTurn, status: OrchestrationV2ProviderTurn["s
  * The adapter for one provider instance. It talks to the instance's
  * {@link OpenCode2Server.OpenCode2Server}, which the driver builds from the instance's settings.
  */
-export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: ProviderInstanceId) {
+export const make = Effect.fn("OpenCode2Adapter.make")(function* (
+  instanceId: ProviderInstanceId,
+  driver = OPENCODE_PROVIDER,
+) {
   const server = yield* OpenCode2Server.OpenCode2Server;
   const idAllocator = yield* IdAllocator.IdAllocatorV2;
   const host = yield* ProviderHost.ProviderHost;
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
   const continuationRequests = yield* ProviderContinuationRequests.ProviderContinuationRequests;
   const crypto = yield* Crypto.Crypto;
-  const driver = OPENCODE_PROVIDER;
+  const ref = (nativeId: string, strength: "strong" | "weak" = "strong") => ({
+    driver,
+    nativeId,
+    strength,
+  });
   const mcpServerNameFor = (threadId: string) =>
     t3McpServerName(threadId).pipe(Effect.provideService(Crypto.Crypto, crypto));
 
@@ -3184,7 +3185,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
         sessionId in (yield* client.session.active().pipe(Effect.timeout(ACTIVE_CHECK_TIMEOUT)));
       if (busyHere || busyThere) {
         return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-          driver: OPENCODE_PROVIDER,
+          driver,
           detail: `Cannot ${verb} OpenCode session ${sessionId} while it is still working`,
         });
       }
@@ -3794,7 +3795,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           const model = modelRef(threadInput.modelSelection);
           if (model === undefined) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-              driver: OPENCODE_PROVIDER,
+              driver,
               detail: malformedModel(threadInput.modelSelection.model),
             });
           }
@@ -3930,13 +3931,13 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               const state = threads.get(sessionId);
               if (state === undefined) {
                 return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-                  driver: OPENCODE_PROVIDER,
+                  driver,
                   detail: `OpenCode session ${sessionId} is not registered`,
                 });
               }
               if (state.active !== undefined) {
                 return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-                  driver: OPENCODE_PROVIDER,
+                  driver,
                   detail: `OpenCode session ${sessionId} already has an active turn`,
                 });
               }
@@ -4091,7 +4092,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
             turn.interrupted
           ) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-              driver: OPENCODE_PROVIDER,
+              driver,
               detail: `OpenCode turn ${steerInput.providerTurnId} is not active`,
             });
           }
@@ -4186,7 +4187,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
           if (!reply.value.interrupted && state.active === turn) {
             turn.interrupted = false;
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-              driver: OPENCODE_PROVIDER,
+              driver,
               detail: `OpenCode session ${sessionId} had nothing running to stop`,
             });
           }
@@ -4397,7 +4398,7 @@ export const make = Effect.fn("OpenCode2Adapter.make")(function* (instanceId: Pr
               : forkInput.sourceProviderTurns?.find((turn) => turn.id === forkInput.providerTurnId);
           if (forkInput.providerTurnId !== undefined && selected === undefined) {
             return yield* new ProviderAdapter.ProviderAdapterProtocolError({
-              driver: OPENCODE_PROVIDER,
+              driver,
               detail: `OpenCode fork boundary turn ${forkInput.providerTurnId} was not found`,
             });
           }

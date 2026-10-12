@@ -5,7 +5,7 @@ import * as NodePath from "node:path";
 
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId, ProviderSessionId, ThreadId } from "@t3tools/contracts";
 import type { OpenCodeSettings } from "../settings.ts";
 import * as HostProcess from "@t3tools/shared/HostProcess";
 import * as Effect from "effect/Effect";
@@ -276,5 +276,90 @@ it.layer(layerUpdate)("OpenCodeDriver updates", (it) => {
         assert.strictEqual(v2.packageName, "@opencode/cli");
         assert.isNull(v2.update);
       }).pipe(Effect.scoped),
+  );
+});
+
+it.layer(layer)("Nebius opt-in gate", (it) => {
+  it.effect.each([false, true])(
+    "refuses inference without an enabled instance and credential (enabled=%s)",
+    (enabled) =>
+      Effect.gen(function* () {
+        const { NebiusDriver } = yield* Effect.promise(() => import("./nebiusDriver.ts"));
+        serverStarts.length = 0;
+        const instance = yield* NebiusDriver.create({
+          instanceId: ProviderInstanceId.make("nebius"),
+          displayName: undefined,
+          environment: [],
+          enabled,
+          config: {
+            ...NebiusDriver.defaultConfig(),
+            apiKey: enabled ? "" : "test-disabled-credential",
+          },
+        }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
+        const error = yield* Effect.flip(
+          instance.orchestrationAdapter.openSession({
+            threadId: ThreadId.make("nebius-gate"),
+            providerSessionId: ProviderSessionId.make("nebius-gate-session"),
+            modelSelection: {
+              instanceId: instance.instanceId,
+              model: "nebius/nvidia/nemotron-3-super-120b-a12b",
+            },
+            runtimePolicy: { runtimeMode: "full-access", interactionMode: "default", cwd: "/work" },
+          }),
+        );
+        assert.equal(error._tag, "ProviderAdapterOpenSessionError");
+        assert.deepStrictEqual(serverStarts, []);
+      }).pipe(Effect.scoped),
+  );
+
+  it.effect("disabled Nebius reads its catalog but never reaches a process or HTTP server", () =>
+    Effect.gen(function* () {
+      const { NebiusDriver } = yield* Effect.promise(() => import("./nebiusDriver.ts"));
+      serverStarts.length = 0;
+      const instance = yield* NebiusDriver.create({
+        instanceId: ProviderInstanceId.make("nebius"),
+        displayName: undefined,
+        environment: [],
+        enabled: false,
+        config: { ...NebiusDriver.defaultConfig(), apiKey: "test-disabled-credential" },
+      }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
+      const snapshot = yield* instance.snapshot.refresh;
+      assert.equal(snapshot.driver, "nebius");
+      assert.equal(snapshot.enabled, false);
+      assert.equal(snapshot.models.length, 3);
+      assert.isTrue(snapshot.models.every((model) => !model.isCustom));
+      yield* instance.snapshotForCwd!("/work");
+      yield* Effect.flip(
+        instance.textGeneration.generateThreadTitle({
+          cwd: "/work",
+          message: "hello",
+          modelSelection: {
+            instanceId: instance.instanceId,
+            model: snapshot.models[0]!.slug,
+          },
+        }),
+      );
+      assert.deepStrictEqual(serverStarts, []);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("enabled Nebius lists the three worker models with its own driver identity", () =>
+    Effect.gen(function* () {
+      const { NebiusDriver } = yield* Effect.promise(() => import("./nebiusDriver.ts"));
+      const instance = yield* NebiusDriver.create({
+        instanceId: ProviderInstanceId.make("nebius"),
+        displayName: undefined,
+        environment: [],
+        enabled: true,
+        config: { ...NebiusDriver.defaultConfig(), enabled: true, apiKey: "test-credential" },
+      }).pipe(Effect.provideService(HttpClient.HttpClient, noHttp));
+      const snapshot = yield* instance.snapshot.getSnapshot;
+      assert.equal(instance.driverKind, "nebius");
+      assert.equal(instance.orchestrationAdapter.driver, "nebius");
+      assert.isTrue(snapshot.models.every((model) => !model.isCustom));
+      assert.deepStrictEqual(
+        snapshot.models.map((model) => model.name),
+        ["Nemotron 3 Nano", "Nemotron 3 Super", "Nemotron 3 Ultra"],
+      );
+    }).pipe(Effect.scoped),
   );
 });

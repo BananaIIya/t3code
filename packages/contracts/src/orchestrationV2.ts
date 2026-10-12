@@ -43,7 +43,7 @@ import {
   OrchestrationGetTurnDiffInput,
   OrchestrationGetTurnDiffResult,
 } from "./checkpointDiff.ts";
-import { ModelSelection } from "./modelSelection.ts";
+import { ModelSelection, WorkerConfiguration } from "./modelSelection.ts";
 import {
   ThreadLinkedPullRequest,
   ThreadPullRequestLink,
@@ -368,6 +368,7 @@ export const OrchestrationV2AppThread = Schema.Struct({
   title: TrimmedNonEmptyString,
   providerInstanceId: ProviderInstanceId,
   modelSelection: ModelSelection,
+  worker: Schema.optional(WorkerConfiguration),
   runtimeMode: RuntimeMode,
   interactionMode: ProviderInteractionMode,
   branch: Schema.NullOr(TrimmedNonEmptyString),
@@ -2708,7 +2709,15 @@ export const OrchestrationV2Command = Schema.Union([
     threadId: ThreadId,
     projectId: ProjectId,
     title: TrimmedNonEmptyString,
-    modelSelection: ModelSelection,
+    worker: Schema.optional(WorkerConfiguration),
+    modelSelection: ModelSelection.pipe(
+      Schema.withDecodingDefault(
+        Effect.succeed({
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-6-luna",
+        }),
+      ),
+    ),
     runtimeMode: RuntimeMode,
     interactionMode: ProviderInteractionMode,
     branch: Schema.NullOr(TrimmedNonEmptyString),
@@ -2917,7 +2926,15 @@ export const OrchestrationV2Command = Schema.Union([
     type: Schema.Literal("thread.model-selection.set"),
     commandId: CommandId,
     threadId: ThreadId,
-    modelSelection: ModelSelection,
+    worker: Schema.optional(WorkerConfiguration),
+    modelSelection: ModelSelection.pipe(
+      Schema.withDecodingDefault(
+        Effect.succeed({
+          instanceId: ProviderInstanceId.make("codex"),
+          model: "gpt-6-luna",
+        }),
+      ),
+    ),
   }),
   Schema.Struct({
     type: Schema.Literal("provider-session.detach"),

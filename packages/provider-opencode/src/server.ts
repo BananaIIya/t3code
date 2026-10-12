@@ -4,5 +4,7 @@
  *
  * @module provider-opencode/server
  */
-export { OpenCodeDriver, type OpenCodeDriverEnv } from "./server/driver.ts";
+export { OpenCodeDriver, makeOpenCodeDriver, type OpenCodeDriverEnv } from "./server/driver.ts";
 export { OpenCodeAdapterV2Driver, type OpenCodeAdapterV2DriverEnv } from "./server/adapter.ts";
+
+export { NebiusDriver } from "./server/nebiusDriver.ts";

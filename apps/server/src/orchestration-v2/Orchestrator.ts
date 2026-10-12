@@ -1,3 +1,4 @@
+import { modelSelectionForWorker, workerForModelSelection } from "@t3tools/contracts";
 import type {
   OrchestrationV2SearchThreadInput,
   OrchestrationV2SearchThreadResult,
@@ -2241,6 +2242,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
       title: command.title,
       providerInstanceId: command.modelSelection.instanceId,
       modelSelection: command.modelSelection,
+      worker: workerForModelSelection(command.modelSelection),
       runtimeMode: command.runtimeMode,
       interactionMode: command.interactionMode,
       branch: command.branch,
@@ -3227,6 +3229,7 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
             ...thread,
             providerInstanceId: command.modelSelection.instanceId,
             modelSelection: command.modelSelection,
+            worker: workerForModelSelection(command.modelSelection),
             updatedAt: now,
           };
       }
@@ -10887,8 +10890,14 @@ const makeOrchestrator = Effect.fn("orchestrationV2.Orchestrator.layer")(functio
   });
 
   const dispatchWithReceiptEffect = Effect.fn("orchestrationV2.dispatch.withReceipt")(function* (
-    command: OrchestrationV2ServerCommand,
+    inputCommand: OrchestrationV2ServerCommand,
   ): Effect.fn.Return<OrchestratorV2DispatchResult, OrchestratorV2Error> {
+    const command =
+      (inputCommand.type === "thread.create" ||
+        inputCommand.type === "thread.model-selection.set") &&
+      inputCommand.worker
+        ? { ...inputCommand, modelSelection: modelSelectionForWorker(inputCommand.worker) }
+        : inputCommand;
     yield* Effect.annotateCurrentSpan({
       "orchestration_v2.command_id": command.commandId,
       "orchestration_v2.command_type": command.type,
